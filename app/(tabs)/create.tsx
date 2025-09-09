@@ -1,13 +1,15 @@
 import { COLORS } from '@/constants/theme';
+import { api } from '@/convex/_generated/api';
 import { styles } from '@/styles/create.styles';
 import { useUser } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
+import { useMutation } from 'convex/react';
+import * as FileSystem from 'expo-file-system';
 import { Image } from 'expo-image';
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
-
 export default function CreateScreen(){
   const router = useRouter();//After creating a post, we redirect the user to home page
   const { user } = useUser();
@@ -27,7 +29,38 @@ export default function CreateScreen(){
     if(!result.canceled) setSelectedImage(result.assets[0].uri);
   }
 
-  console.log(selectedImage);
+  const generateUploadUrl = useMutation(api.posts.generateUploadUrl);
+  const createPost = useMutation(api.posts.createPost);
+
+  //npx expo install expo-file-system
+  const handleShare = async () =>{
+    if(!selectedImage) return;
+
+    try{
+      setIsSharing(true);
+      const uploadUrl = await generateUploadUrl();
+      const uploadResult = await FileSystem.uploadAsync(uploadUrl,selectedImage,{
+        httpMethod : "POST",
+        uploadType : FileSystem.FileSystemUploadType.BINARY_CONTENT,
+        mimeType: "image/jpeg",
+      });
+
+      if(uploadResult.status !=200) throw new Error("Upload Failed");
+
+      const {storageId} = JSON.parse(uploadResult.body);
+      await createPost({storageId,caption});
+
+      setSelectedImage(null);
+      setCaption("");
+      router.push("/(tabs)")
+    }
+    catch(error){
+      console.log("Error sharing post")
+    }
+    finally{
+      setIsSharing(false)
+    }
+  }
 
   if(!selectedImage){
     return(
@@ -52,7 +85,7 @@ export default function CreateScreen(){
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       style= {styles.container}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 20 : 0}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
       >
 
         <View style ={styles.contentContainer}>
@@ -61,7 +94,7 @@ export default function CreateScreen(){
               setSelectedImage(null);
               setCaption("");
             }}
-            disabled = {isSharing}
+            disabled = {isSharing} //if true disable all interactions with this button
             >
                <Ionicons name="close-outline" size={28} color={isSharing?COLORS.grey:COLORS.white}/> 
             </TouchableOpacity>
@@ -70,6 +103,7 @@ export default function CreateScreen(){
             <TouchableOpacity
               style={[styles.shareButton, isSharing && styles.shareButtonDisabled]}
               disabled={isSharing || !selectedImage}
+              onPress= {handleShare}
             >
               {isSharing ? (
                 <ActivityIndicator size="small" color={COLORS.primary} />
@@ -94,9 +128,9 @@ export default function CreateScreen(){
                 contentFit="cover"
                 transition={200}
               />
-              <TouchableOpacity onPress={ }>
-                <Ionicons name="image-outline" size={28} />
-
+              <TouchableOpacity style={styles.changeImageButton} onPress={pickImage} disabled={isSharing} >
+                <Ionicons name="image-outline" size={28} color={COLORS.white}/>
+                <Text style={styles.changeImageText}>Change</Text>
               </TouchableOpacity>
             </View>
 
